@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environments
+.venv/
+venv/
+env/
+
+# Runtime artifacts
+dataset/
+raw_datasets/
+outputs/
+ckpt/
+checkpoints/
+results/
+logs/
+runs/
+wandb/
+
+# Model and cache files
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.ckpt
+*.cache
+
+# Local configuration
+.env
+.env.*
+*.local
+
+# System files
+.DS_Store
