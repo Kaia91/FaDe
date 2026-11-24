@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 324" width="760" height="324" role="img" aria-labelledby="title desc">
+  <title id="title">Where was the scientist born?</title>
+  <desc id="desc">In the first prompt Paris appears in prose and London in a table. The model answers London. In the second prompt Paris appears in the table and London in prose. The model answers Paris.</desc>
+  <defs>
+    <g id="prose">
+      <rect width="300" height="46" rx="5" fill="#e7efeb"/>
+      <g fill="none" stroke="#467164" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M16 10h14l6 6v20H16z M30 10v7h6"/>
+        <path d="M21 22h10m-10 5h8"/>
+      </g>
+    </g>
+    <g id="table">
+      <rect width="300" height="46" rx="5" fill="#f5e9c8"/>
+      <path d="M122 1v44" stroke="#cab98d"/>
+      <text x="15" y="29" font-size="17" fill="#645532">Birthplace</text>
+    </g>
+  </defs>
+  <rect width="760" height="324" rx="14" fill="#183b36"/>
+  <path d="M27 26v32" stroke="#edcf83" stroke-width="3"/>
+  <text x="44" y="54" font-family="Georgia, 'DejaVu Serif', serif" font-size="33" fill="#fff9ec">Where was the scientist born?</text>
+  <path d="M28 77h704" stroke="#56736b"/>
+  <g font-family="Arial, sans-serif">
+    <g transform="translate(36 0)">
+      <text y="112" font-size="19" font-weight="bold" fill="#e2ede6">Original prompt</text>
+      <g transform="translate(0 129)">
+        <use href="#prose" xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="#prose"/>
+        <text x="53" y="30" font-family="Georgia, 'DejaVu Serif', serif" font-size="22" fill="#23463d">Born in Paris.</text>
+      </g>
+      <g transform="translate(0 185)">
+        <use href="#table" xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="#table"/>
+        <text x="138" y="31" font-size="23" font-weight="bold" fill="#413b2b">London</text>
+      </g>
+      <text y="289" font-size="17" fill="#bfd0c8">Answer</text>
+      <text x="78" y="289" font-family="Georgia, 'DejaVu Serif', serif" font-size="32" fill="#fff9ec">London</text>
+    </g>
+    <g transform="translate(424 0)">
+      <text y="112" font-size="19" font-weight="bold" fill="#e2ede6">After swapping formats</text>
+      <g transform="translate(0 129)">
+        <use href="#table" xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="#table"/>
+        <text x="138" y="31" font-size="23" font-weight="bold" fill="#413b2b">Paris</text>
+      </g>
+      <g transform="translate(0 185)">
+        <use href="#prose" xmlns:xlink="http://www.w3.org/1999/xlink" xlink:href="#prose"/>
+        <text x="53" y="30" font-family="Georgia, 'DejaVu Serif', serif" font-size="22" fill="#23463d">Born in London.</text>
+      </g>
+      <text y="289" font-size="17" fill="#bfd0c8">Answer</text>
+      <text x="78" y="289" font-family="Georgia, 'DejaVu Serif', serif" font-size="32" fill="#fff9ec">Paris</text>
+    </g>
+  </g>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M380 103v50m0 58v87" stroke="#547068" stroke-dasharray="2 6"/>
+    <circle cx="380" cy="181" r="22" stroke="#69857c"/>
+    <path d="M369 175h21l-5-5m6 16h-21l5 5" stroke="#edcf83" stroke-width="2"/>
+    <path d="M36 249h300m88 0h300" stroke="#56736b"/>
+  </g>
+</svg>

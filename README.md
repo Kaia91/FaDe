@@ -1,128 +1,163 @@
-# FaDe
+<h1 align="center">FaDe · Format-Averaged Debiasing</h1>
 
-Code for the EMNLP 2026 paper *Format as Nuisance: Intervention-Inspired
-Cross-Format Distillation for Knowledge Conflicts*.
+<p align="center">
+  <strong>Format as Nuisance: Intervention-Inspired Cross-Format Distillation for Knowledge Conflicts</strong><br>
+  Yue Yu, Wang Luo, Shenghao Ye, Zepeng Bao, Jiacheng Liu, Yongqi Li, Wenxin Tang, and Tieyun Qian<br>
+  <strong>EMNLP 2026</strong>
+</p>
 
-FaDe trains a LoRA student so that its answer to two conflicting pieces of
-evidence does not depend on the formats (text, table, knowledge-graph triples,
-infobox) the evidence is written in. A frozen copy of the base model is queried
-on the same content under several format assignments; the averaged response
-distribution, mixed with the original all-text distribution according to how
-much the formats disagree, is the distillation target for the student when it
-reads the evidence in sampled formats.
+<p align="center">
+  <a href="https://aclanthology.org/2026.emnlp-main.2028/">Paper</a> ·
+  <a href="https://aclanthology.org/2026.emnlp-main.2028v2.pdf">PDF</a> ·
+  <a href="#results">Results</a> ·
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#citation">Citation</a>
+</p>
 
-This repository contains the core FaDe implementation: teacher-cache
-construction and training.
+<p align="center">
+  <img src="docs/format-swap.svg" width="760" alt="In the paper’s example, the model answers London when London is in a table, then Paris when Paris is in the table. Both sources keep their original claims.">
+</p>
 
-## Repository Layout
+Two biographies disagree about a scientist’s birthplace. One says Paris, the other London. If you saw only the first answer, you might think the model had found a reason to trust the London account. In the second prompt, Paris moves into the table and the model switches its answer to Paris. [Figure 1 in the paper](https://aclanthology.org/2026.emnlp-main.2028v2.pdf#page=1)
 
-| Path | Purpose |
-| --- | --- |
-| `train.py` | Entry point for the two stages: teacher cache and training. |
-| `data/` | Data loading, format-varied prompt construction, teacher cache. |
-| `losses/` | FaDe training losses. |
-| `trainers/` | Training loop and checkpointing. |
-| `scripts/run/` | Shell wrappers for the two stages. |
+**FaDe trains a language model to give conflicting sources a more consistent reading across formats.** During training, a frozen teacher reads the same claims several ways. At inference, the student reads the evidence once, in the formats it receives.
 
-## Setup
+## Results
+
+Across four model backbones and three conflict datasets, **FaDe reduced format bias by 34.1% on average** relative to the base models. The evaluation covers ConflictBank and controlled conflicts built from MuSiQue and HotpotQA. [Main results, Table 1](https://aclanthology.org/2026.emnlp-main.2028v2.pdf)
+
+The birthplace example has a measurable counterpart. On 1,000 ConflictBank pairs, we tested whether Qwen3-8B would choose one source in one rendering and the opposite source in another. After training, fewer pairs produced such a flip, and more responses acknowledged both accounts. [Tables 1 and 10](https://aclanthology.org/2026.emnlp-main.2028v2.pdf)
+
+| Qwen3-8B on ConflictBank | Base | FaDe |
+| :--- | ---: | ---: |
+| Pairs with a source flip across renderings ↓ | 60.5% | **41.9%** |
+| Responses acknowledging both sources ↑ | 30.9% | **42.0%** |
+| Directional format bias ↓ | 0.276 | **0.210** |
+
+Directional bias measures how far a format’s preference rate among single-source answers departs from an even 50–50 split. [Evaluation metrics, §4.1](https://aclanthology.org/2026.emnlp-main.2028v2.pdf)
+
+## How FaDe works
+
+1. **Change how each source is written.** Keep both claims and their order fixed. The frozen teacher reads seven versions of the prompt, one all-text control and six pairings drawn from prose, tables, knowledge-graph triples, and infoboxes. [Prompt construction](data/conflictbank_processor.py)
+2. **Build a target for each conflict.** Average the teacher’s next-token distributions across the seven versions. When the teacher gives similar predictions across formats, keep the target close to its all-text prediction. As disagreement grows, give the average more weight. Cache the top 256 tokens per response position. [Teacher cache](data/teacher_cache.py)
+3. **Train the student on sampled formats.** A LoRA student sees a fresh choice of formats as it trains and learns to match the cached target. The teacher’s extra readings happen offline. The merged student can answer a single prompt at inference. [Training loop](trainers/fade_trainer.py) · [Losses](losses/loss_design.py)
+
+## Quick start
+
+Use a chat model and a CUDA GPU with room for the model weights, LoRA adapters, and activations. The tested 8B setup used Python 3.10, PyTorch 2.6.0 (CUDA 12.4), Transformers 5.6.2, and PEFT 0.19.1. FlashAttention is optional. PyTorch SDPA is the fallback.
 
 ```bash
+git clone https://github.com/Kaia91/FaDe.git
+cd FaDe
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Tested with Python 3.10, PyTorch 2.6.0 (CUDA 12.4), transformers 5.6.2 and
-peft 0.19.1. `flash-attn` is optional; without it the code falls back to
-PyTorch SDPA attention. Training an 8B model needs one GPU that holds the bf16
-model, the LoRA adapters and the activations; the teacher is only loaded during
-the cache stage.
+### Prepare the training data
 
-## Input Data
+Supply a JSONL file with one contradiction pair per line. Each source has a claim, its answer, and the evidence that supports it. Include each available rendering for both sources. If you omit a format for both, the loader uses their prose for that format.
 
-Training files are JSONL, one contradiction pair per line:
+<details>
+<summary><strong>Example training pair</strong></summary>
+
+This fictional record follows the birthplace example above. Save it as `pair.json` and run `python3 -m json.tool --compact pair.json > example.jsonl` to write one JSONL record.
 
 ```json
 {
-  "id": "entry_12_temporal",
-  "question": "...",
-  "claim_a": "...",
-  "claim_b": "...",
-  "evidence_a": "...",
-  "evidence_b": "...",
-  "answer_a": "...",
-  "answer_b": "...",
-  "conflict_type": "temporal",
-  "evidence_a_table": "...",
-  "evidence_a_kg": "...",
-  "evidence_a_infobox": "...",
-  "evidence_b_table": "...",
-  "evidence_b_kg": "...",
-  "evidence_b_infobox": "..."
+  "id": "birthplace_001",
+  "question": "Where was the scientist Mira Vale born?",
+  "claim_a": "Mira Vale was born in Paris.",
+  "claim_b": "Mira Vale was born in London.",
+  "answer_a": "Paris",
+  "answer_b": "London",
+  "evidence_a": "The biography gives Paris as Mira Vale's birthplace.",
+  "evidence_b": "The biography gives London as Mira Vale's birthplace.",
+  "evidence_a_table": "| Scientist | Birthplace |\n| --- | --- |\n| Mira Vale | Paris |",
+  "evidence_b_table": "| Scientist | Birthplace |\n| --- | --- |\n| Mira Vale | London |",
+  "evidence_a_kg": "(Mira Vale, place of birth, Paris)",
+  "evidence_b_kg": "(Mira Vale, place of birth, London)",
+  "evidence_a_infobox": "Name: Mira Vale\nBorn: Paris",
+  "evidence_b_infobox": "Name: Mira Vale\nBorn: London",
+  "conflict_type": "birthplace"
 }
 ```
 
-`evidence_a` supports `answer_a` and `evidence_b` supports `answer_b`. The
-`*_table`, `*_kg` and `*_infobox` fields hold the same evidence rendered in
-that format; if one is missing, the plain-text evidence is used instead.
+</details>
 
-## Running FaDe
+### Cache the teacher and train the student
+
+Set `TRAIN_DATA` to your prepared file and choose a Hugging Face model ID or local model directory. Run both commands from the repository root.
 
 ```bash
-export MODEL_NAME_OR_PATH=<huggingface-model-id-or-local-path>
-export TRAIN_DATA=dataset/conflictbank/conflict_train.jsonl
+export MODEL_NAME_OR_PATH=Qwen/Qwen3-8B
+export TRAIN_DATA=./train.jsonl
 export OUTPUT_DIR=outputs/fade
 
-# Stage 0: cache the frozen teacher's targets
 bash scripts/run/run_fade_cache.sh
-
-# Stage 1: train the LoRA student (saves the adapter and a merged model)
 bash scripts/run/run_fade_train.sh
 ```
 
-`python3 train.py --stage all --model_name ... --data_path ...` runs both
-stages in one process. For a quick check on a subset, set the
-same `MAX_TRAIN_SAMPLES` for the cache and training stages; the training stage
-checks that the cache was built from the same pairs and with the same
-symmetric-target setting. An existing cache directory is never overwritten
-unless `OVERWRITE_TEACHER_CACHE=1` is set.
+The first command writes targets to `$OUTPUT_DIR/teacher_cache/`. The second saves the merged model and tokenizer in `$OUTPUT_DIR/` and the adapter in `$OUTPUT_DIR/lora_adapter/`.
 
-## Default Configuration
+<details>
+<summary><strong>Run both stages in one process or try a subset</strong></summary>
 
-The defaults of `train.py` are the settings of our FaDe runs; the same
-settings were used for every backbone.
+```bash
+python3 train.py --stage all \
+  --model_name "$MODEL_NAME_OR_PATH" \
+  --data_path "$TRAIN_DATA" \
+  --output_dir "$OUTPUT_DIR"
+```
+
+For a smaller run with the shell scripts, set `MAX_TRAIN_SAMPLES` before running both stages. Keep the same ordered pairs, sample limit, and symmetric-target setting when reusing cached targets. Choose a fresh output directory for a new run, or set `OVERWRITE_TEACHER_CACHE=1` on the cache script to deliberately rebuild an existing cache.
+
+To test the pipeline on the single example above, use a batch size and accumulation interval of one so the optimizer takes a step.
+
+```bash
+python3 train.py --stage all --model_name "$MODEL_NAME_OR_PATH" \
+  --data_path example.jsonl --output_dir outputs/fade-example \
+  --batch_size 1 --gradient_accumulation_steps 1 --num_epochs 1
+```
+
+</details>
+
+<details>
+<summary><strong>Training defaults and command-line flags</strong></summary>
+
+These are the defaults in the released training entry point. [All training options](train.py)
 
 | Setting | Default | Flag |
-| --- | --- | --- |
+| :--- | :--- | :--- |
 | LoRA rank / alpha / dropout | 64 / 128 / 0.05 | `--lora_r`, `--lora_alpha`, `--lora_dropout` |
-| Learning rate | 3e-6 | `--learning_rate` |
-| Batch size x gradient accumulation | 2 x 16 | `--batch_size`, `--gradient_accumulation_steps` |
-| Epochs | 2 | `--num_epochs` |
+| Learning rate / epochs | 3e-6 / 2 | `--learning_rate`, `--num_epochs` |
+| Batch size × accumulation | 2 × 16 | `--batch_size`, `--gradient_accumulation_steps` |
 | Cached teacher top-K | 256 | `--cache_top_k` |
-| Format assignments for the marginalized target | text-text + 6 heterogeneous pairs | fixed |
-| tau_low / tau_high | 0.01 / 0.05 | `--adaptive_backdoor_low`, `--adaptive_backdoor_high` |
-| alpha_min / alpha_max | 0 / 1 | `--adaptive_backdoor_min_weight`, `--adaptive_backdoor_max_weight` |
-| Anchoring KL weight lambda_anc | 0 | `--anchor_coef` |
-| Fraction of all-text activation samples | 0 | `--anchor_ratio` |
-| Gold-response CE weight lambda_gold | 0.2 | `--gold_ce_coef` |
-| Symmetric targets | on | `--no_symmetric_targets` |
-| Hidden-state balance weight | 0.1 | `--balance_coef` |
-| Format-adversarial weight | 0.05 | `--format_adv_coef` |
-| Student format sampling | each source uniform over the 4 formats | `--format_mode` |
-| Seed | 42 | `--seed` |
+| Disagreement thresholds | 0.01 / 0.05 | `--adaptive_backdoor_low`, `--adaptive_backdoor_high` |
+| Minimum / maximum weight on the average | 0 / 1 | `--adaptive_backdoor_min_weight`, `--adaptive_backdoor_max_weight` |
+| Anchoring KL weight / all-text anchor fraction | 0 / 0 | `--anchor_coef`, `--anchor_ratio` |
+| Gold-response cross-entropy weight | 0.2 | `--gold_ce_coef` |
+| Symmetric targets | On | `--no_symmetric_targets` to disable |
+| Hidden-state balance / format-adversarial weight | 0.1 / 0.05 | `--balance_coef`, `--format_adv_coef` |
+| Student format sampling | Uniform per source over four formats | `--format_mode` |
+| Random seed | 42 | `--seed` |
+
+</details>
 
 ## Citation
 
 ```bibtex
-@inproceedings{fade2026,
+@inproceedings{yu-etal-2026-format,
   title     = {Format as Nuisance: Intervention-Inspired Cross-Format Distillation for Knowledge Conflicts},
+  author    = {Yu, Yue and Luo, Wang and Ye, Shenghao and Bao, Zepeng and
+               Liu, Jiacheng and Li, Yongqi and Tang, Wenxin and Qian, Tieyun},
   booktitle = {Proceedings of the 2026 Conference on Empirical Methods in Natural Language Processing},
-  year      = {2026}
+  year      = {2026},
+  pages     = {46190--46211},
+  publisher = {Association for Computational Linguistics},
+  doi       = {10.18653/2026.emnlp-main.2028},
+  url       = {https://aclanthology.org/2026.emnlp-main.2028/}
 }
 ```
 
-The full entry will be added once the proceedings are online.
-
-## License
-
-MIT, see `LICENSE`.
+The code is available under the [MIT License](LICENSE).
